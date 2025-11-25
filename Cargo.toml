@@ -1,0 +1,30 @@
+[package]
+name = "cyberkit"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+# CLI e Argumentos
+clap = { version = "4.4", features = ["derive"] }
+tokio = { version = "1", features = ["full"] } # Async Runtime
+anyhow = "1.0" # Tratamento de erros fácil
+colored = "2.0" # Cores no terminal
+
+# Scanner & Networking
+socket2 = "0.5"
+futures = "0.3"
+
+# Web
+reqwest = { version = "0.11", features = ["json", "blocking"] }
+scraper = "0.18" # Para parsear HTML
+url = "2.5"
+
+# PCAP / Packet Analysis
+pcap = "1.1" # Bindings para libpcap
+pnet_packet = "0.34" # Parsear pacotes TCP/IP cru
+
+# IDS & Utils
+regex = "1.10"
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+chrono = "0.4" # Para logs com timestamp
