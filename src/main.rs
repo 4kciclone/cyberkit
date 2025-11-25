@@ -27,8 +27,8 @@ async fn main() {
             
             pcap::run(file);
         }
-        Commands::Ids { file, rules } => {
-            ids::run(file, rules);
+        Commands::Ids { file, device, rules } => {
+            ids::run(file, device, rules);
         }
     }
 }

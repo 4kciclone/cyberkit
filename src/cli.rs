@@ -2,7 +2,7 @@ use clap::{Parser, Subcommand};
 
 #[derive(Parser)]
 #[command(name = "cyberkit")]
-#[command(about = "Cybersecurity Toolkit em Rust", long_about = None)]
+#[command(about = "Cybersecurity Toolkit Profissional em Rust", long_about = None)]
 pub struct Cli {
     #[command(subcommand)]
     pub command: Commands,
@@ -39,7 +39,11 @@ pub enum Commands {
     Ids {
         
         #[arg(short, long)]
-        file: String,
+        file: Option<String>,
+
+        
+        #[arg(short, long)]
+        device: Option<String>,
         
         
         #[arg(short, long)]
