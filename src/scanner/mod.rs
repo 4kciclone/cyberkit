@@ -2,103 +2,145 @@ pub mod port_scanner;
 pub mod service_detection;
 
 use colored::*;
+use ipnetwork::IpNetwork;
+use serde::Serialize;
 use std::net::IpAddr;
 use std::str::FromStr;
 use std::sync::Arc;
 use tokio::sync::Mutex;
-use port_scanner::scan_port;
+use port_scanner::{scan_port, scan_udp_port}; 
 use service_detection::identify_service;
 
-pub async fn run(target: String, ports_arg: Option<String>) {
+
+#[derive(Serialize)]
+struct ScanReport {
+    network_scan: String,
+    protocol: String, 
+    hosts: Vec<HostResult>,
+}
+
+#[derive(Serialize, Clone)]
+struct HostResult {
+    ip: String,
+    ports: Vec<PortInfo>,
+}
+
+#[derive(Serialize, Clone)]
+struct PortInfo {
+    port: u16,
+    service: String,
+    banner: String,
+}
+
+
+
+pub async fn run(target: String, ports_arg: Option<String>, json_output: bool, is_udp: bool) {
     
-    let ip = match IpAddr::from_str(&target) {
-        Ok(i) => i,
-        Err(_) => {
-            println!("{} IP inválido: {}", "ERROR:".red(), target);
-            return;
-        }
+    let targets: Vec<IpAddr> = if let Ok(ip) = IpAddr::from_str(&target) {
+        vec![ip]
+    } else if let Ok(net) = target.parse::<IpNetwork>() {
+        net.iter().collect()
+    } else {
+        if !json_output { println!("{} Alvo inválido: {}", "ERROR:".red(), target); }
+        return;
     };
 
     
-    let ports_to_scan = parse_ports(ports_arg);
+    let ports_to_scan = parse_ports(ports_arg, is_udp);
+    let proto_str = if is_udp { "UDP" } else { "TCP" };
 
-    println!(
-        "{} Iniciando scan avançado em {} para {} portas...",
-        "[*]".blue(),
-        ip.to_string().bold(),
-        ports_to_scan.len()
-    );
+    if !json_output {
+        println!(
+            "{} Alvo: {} | Protocolo: {} | Hosts: {}",
+            "[*]".blue(),
+            target.bold(),
+            proto_str.yellow(),
+            targets.len()
+        );
+        println!("{}", "------------------------------------------------------------".bright_black());
+    }
 
-    println!("{}", "------------------------------------------------------------".bright_black());
-
-    
-    
-    
-    let results = Arc::new(Mutex::new(Vec::new()));
-    
-    
-    let mut handles = vec![];
+    let final_report = Arc::new(Mutex::new(Vec::new()));
 
     
-    for port in ports_to_scan {
-        let results_clone = Arc::clone(&results);
-        
-        
-        let handle = tokio::spawn(async move {
-            
-            
-            
-            if let Some(banner) = scan_port(ip, port, 1500).await {
-                
-                
-                let service_name = identify_service(port);
-                
-                
-                println!(
-                    "{} Porta {} \t| Serviço: {} \t| Banner: {}",
-                    "[+]".green(),
-                    port.to_string().bold(),
-                    service_name.cyan(),
-                    banner.yellow().italic() 
-                );
+    for ip in targets {
+        if !json_output { println!("{} Verificando Host: {}", "->".blue(), ip); }
 
+        let mut handles = vec![];
+        let host_ports = Arc::new(Mutex::new(Vec::new()));
+
+        for &port in &ports_to_scan {
+            let host_ports_clone = Arc::clone(&host_ports);
+            let ip_clone = ip;
+            let use_udp = is_udp; 
+
+            let handle = tokio::spawn(async move {
                 
-                let mut lock = results_clone.lock().await;
-                lock.push((port, service_name, banner));
-            }
-        });
-        handles.push(handle);
+                let scan_result = if use_udp {
+                    scan_udp_port(ip_clone, port, 2000).await
+                } else {
+                    scan_port(ip_clone, port, 1500).await
+                };
+
+                if let Some(banner) = scan_result {
+                    let service_name = identify_service(port);
+
+                    if !json_output {
+                        println!(
+                            "    {} Porta {} \t| {} \t| {}",
+                            "[+]".green(),
+                            port.to_string().bold(),
+                            service_name.cyan(),
+                            banner.yellow().italic()
+                        );
+                    }
+
+                    let mut lock = host_ports_clone.lock().await;
+                    lock.push(PortInfo { port, service: service_name.to_string(), banner });
+                }
+            });
+            handles.push(handle);
+        }
+
+        for handle in handles { let _ = handle.await; }
+
+        let ports_found = host_ports.lock().await;
+        if !ports_found.is_empty() {
+            let mut report_lock = final_report.lock().await;
+            report_lock.push(HostResult {
+                ip: ip.to_string(),
+                ports: ports_found.to_vec(),
+            });
+        }
     }
 
     
-    
-    for handle in handles {
-        let _ = handle.await;
-    }
-
-    println!("{}", "------------------------------------------------------------".bright_black());
-    
-    
-    let final_results = results.lock().await;
-    if final_results.is_empty() {
-        println!("{} Nenhuma porta aberta encontrada.", "[-]".yellow());
+    if json_output {
+        let report = ScanReport {
+            network_scan: target,
+            protocol: proto_str.to_string(),
+            hosts: final_report.lock().await.to_vec(),
+        };
+        println!("{}", serde_json::to_string_pretty(&report).unwrap());
     } else {
-        println!("{} Scan finalizado. {} portas abertas encontradas.", "[*]".blue(), final_results.len());
+        println!("{}", "------------------------------------------------------------".bright_black());
+        println!("{} Varredura completa.", "[*]".blue());
     }
 }
 
 
-fn parse_ports(ports_arg: Option<String>) -> Vec<u16> {
+fn parse_ports(ports_arg: Option<String>, is_udp: bool) -> Vec<u16> {
     if let Some(p_str) = ports_arg {
         p_str.split(',')
             .filter_map(|s| s.trim().parse::<u16>().ok())
             .collect()
     } else {
-        
-        vec![
-            21, 22, 23, 25, 53, 80, 110, 135, 139, 143, 443, 445, 
-            993, 995, 1433, 3000, 3306, 3389, 5432, 5900, 6379, 
-            8000, 8080, 8443, 9000, 9090, 27017
-        ]
+        if is_udp {
+            
+            vec![53, 67, 68, 69, 123, 161, 162, 500, 514, 520, 623, 1900, 5353]
+        } else {
+            
+            vec![21, 22, 23, 25, 53, 80, 110, 135, 139, 443, 445, 3306, 3389, 8080]
+        }
     }
 }

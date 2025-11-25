@@ -19,6 +19,14 @@ pub enum Commands {
         
         #[arg(short, long)]
         ports: Option<String>,
+
+        
+        #[arg(long)]
+        json: bool,
+
+        
+        #[arg(long)]
+        udp: bool,
     },
 
     
@@ -26,6 +34,10 @@ pub enum Commands {
         
         #[arg(short, long)]
         url: String,
+
+        
+        #[arg(short, long, default_value_t = 2)]
+        depth: usize,
     },
 
     
@@ -48,5 +60,9 @@ pub enum Commands {
         
         #[arg(short, long)]
         rules: Option<String>,
+
+        
+        #[arg(long)]
+        log: Option<String>,
     },
 }
